@@ -138,8 +138,13 @@ class IntradayTickExample {
 		// Extract data from message
 		Element data = msg.getElement(TICK_DATA).getElement(TICK_DATA);
 		int numItems = data.numValues();
+		std::string fileName;
+		fileName = d_security.replace(d_security.begin(), d_security.end(), ' ', '-');
+		fileName += "_";
+		fileName += d_startDateTime.substr(0, 10);
+		fileName += ".csv";
 
-		std::ofstream csvFile(d_security + " " + d_startDateTime + ".csv");
+		std::ofstream csvFile(fileName, std::ios_base::app);
 		csvFile << "TIME,TYPE,VALUE,SIZE" << std::endl;
 
 		// Declare variables in each data row
