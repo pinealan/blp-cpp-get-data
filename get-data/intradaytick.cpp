@@ -45,7 +45,6 @@ using namespace blpapi;
 
 namespace {
 	const Name TICK_DATA("tickData");
-	const Name COND_CODE("conditionCodes");
 	const Name TICK_SIZE("size");
 	const Name TIME("time");
 	const Name TYPE("type");
@@ -62,9 +61,11 @@ class IntradayTickExample {
 	int                         d_port;
 	std::string                 d_security;
 	std::vector<std::string>    d_events;
-	bool                        d_conditionCodes;
 	std::string                 d_startDateTime;
 	std::string                 d_endDateTime;
+	bool						d_security_assigned;
+	bool						d_startDateTime_assigned;
+	bool						d_endDateTime_assigned;
 
 
 	void printUsage()
@@ -76,7 +77,6 @@ class IntradayTickExample {
 			<< "    [-e     <event = TRADE/BID/ASK>" << '\n'
 			<< "    [-sd    <startDateTime  = 2008-08-11T15:30:00>" << '\n'
 			<< "    [-ed    <endDateTime    = 2008-08-11T15:35:00>" << '\n'
-			<< "    [-cc    <includeConditionCodes = false>" << '\n'
 			<< "    [-ip    <ipAddress = localhost>" << '\n'
 			<< "    [-p     <tcpPort   = 8194>" << '\n'
 			<< "Notes:" << '\n'
@@ -98,18 +98,18 @@ class IntradayTickExample {
 		for (int i = 1; i < argc; ++i) {
 			if (!std::strcmp(argv[i], "-s") && i + 1 < argc) {
 				d_security = argv[++i];
+				d_security_assigned = true;
 			}
 			else if (!std::strcmp(argv[i], "-e") && i + 1 < argc) {
 				d_events.push_back(argv[++i]);
 			}
-			else if (!std::strcmp(argv[i], "-cc")) {
-				d_conditionCodes = true;
-			}
 			else if (!std::strcmp(argv[i], "-sd") && i + 1 < argc) {
 				d_startDateTime = argv[++i];
+				d_startDateTime_assigned = true;
 			}
 			else if (!std::strcmp(argv[i], "-ed") && i + 1 < argc) {
 				d_endDateTime = argv[++i];
+				d_endDateTime_assigned = true;
 			}
 			else if (!std::strcmp(argv[i], "-ip") && i + 1 < argc) {
 				d_host = argv[++i];
@@ -124,7 +124,7 @@ class IntradayTickExample {
 			}
 		}
 
-		// add "TRADE" to d_events
+		// Add desired events
 		if (d_events.size() == 0) {
 			d_events.push_back("TRADE");
 			d_events.push_back("BID");
@@ -135,43 +135,34 @@ class IntradayTickExample {
 
 	void processMessage(Message &msg)
 	{
-		//define data is an Element 
+		// Extract data from message
 		Element data = msg.getElement(TICK_DATA).getElement(TICK_DATA);
 		int numItems = data.numValues();
-		//formatting of output (change from cout to csv)
-		std::cout << "TIME\t\t\t\tTYPE\tVALUE\t\tSIZE\tCC" << std::endl;
-		std::cout << "----\t\t\t\t----\t-----\t\t----\t--" << std::endl;
-		std::string cc;
+
+		std::ofstream csvFile(d_security + " " + d_startDateTime + ".csv");
+		csvFile << "TIME,TYPE,VALUE,SIZE" << std::endl;
+
+		// Declare variables in each data row
+		std::string timeString;
 		std::string type;
+		double value;
+		int size;
+
 		// Outputing necessary data including time/type/price/amount as "item" Element
 		for (int i = 0; i < numItems; ++i) {
 			Element item = data.getValueAsElement(i);
-			std::string timeString = item.getElementAsString(TIME);
+
+			timeString = item.getElementAsString(TIME);
 			type = item.getElementAsString(TYPE);
-			double value = item.getElementAsFloat64(VALUE);
-			int size = item.getElementAsInt32(TICK_SIZE);
-			if (item.hasElement(COND_CODE)) {
-				cc = item.getElementAsString(COND_CODE);
-			}
-			else {
-				cc.clear();
-			}
+			value = item.getElementAsFloat64(VALUE);
+			size = item.getElementAsInt32(TICK_SIZE);
 
-			std::cout.setf(std::ios::fixed, std::ios::floatfield);
-			/*
-			ofstream betaRetrieval;
-			betaRetrieval.open ("betaRetrieval.csv");
-			betaRetrieval << "Time, Type, Value, Size.\n";
-			betaRetrieval << timeString << "," << type << "," << value << "," << size << "," << cc << std:endl;
-			betaRetrieval.close();
-
-			*/
-			std::cout << timeString << "\t"
-				<< type << "\t"
-				<< std::setprecision(3)
-				<< std::showpoint << value << "\t\t"
-				<< size << "\t" << std::noshowpoint
-				<< cc << std::endl;
+			csvFile.setf(std::ios::fixed, std::ios::floatfield);
+			csvFile
+				<< timeString << ","
+				<< type << ","
+				<< std::setprecision(3) << std::showpoint << value << ","
+				<< std::noshowpoint << size << std::endl;
 		}
 	}
 
@@ -194,7 +185,7 @@ class IntradayTickExample {
 		Service refDataService = session.getService("//blp/refdata");
 		Request request = refDataService.createRequest("IntradayTickRequest");
 
-		// only one security/eventType per request
+		// Only one security/eventType per request
 		request.set("security", d_security.c_str());
 
 		// Add fields to request
@@ -204,21 +195,6 @@ class IntradayTickExample {
 			eventTypes.appendValue(d_events[i].c_str());
 		}
 
-		//for (size_t i = 0; i < d_events.size(); ++i) { ***for reference only
-
-		/*
-
-		std:string array[3];
-		array[0] = "ASK";
-		array[1] = "BID";
-		array[2] = "TRADE";
-
-		for (i =0; i<3; ++1){
-
-		eventTypes.appendValue(array[i].c_str());
-
-		}
-		*/
 		// All times are in GMT
 		if (d_startDateTime.empty() || d_endDateTime.empty()) {
 			Datetime startDateTime, endDateTime;
@@ -232,10 +208,6 @@ class IntradayTickExample {
 				request.set("startDateTime", d_startDateTime.c_str());
 				request.set("endDateTime", d_endDateTime.c_str());
 			}
-		}
-
-		if (d_conditionCodes) {
-			request.set("includeConditionCodes", true);
 		}
 
 		std::cout << "Sending Request: " << request << std::endl;
@@ -298,17 +270,49 @@ class IntradayTickExample {
 				tm_p->tm_mon + 1,
 				tm_p->tm_mday);
 			endDate_p->setTime(15, 35, 0);
+
+			free(tm_p);
 			return(0);
 		}
+		free(tm_p);
 		return (-1);
 	}
 
-	void d_security_nameSet()
+	void setConfig()
+	{
+		if (!d_security_assigned) {
+			setSecurity();
+		}
+		if (!d_startDateTime_assigned) {
+			setStartDateTime();
+		}
+		if (!d_endDateTime_assigned) {
+			setEndDateTime();
+		}
+	}
+
+	void setSecurity()
 	{
 		std::string x;
 		std::cout << "Provide ticker: ";
 		std::getline(std::cin, x);
 		d_security = x;
+	}
+
+	void setStartDateTime()
+	{
+		std::string x;
+		std::cout << "Provide start date: ";
+		std::getline(std::cin, x);
+		d_startDateTime = x;
+	}
+
+	void setEndDateTime()
+	{
+		std::string x;
+		std::cout << "Provide start date: ";
+		std::getline(std::cin, x);
+		d_endDateTime = x;
 	}
 
 public:
@@ -317,8 +321,9 @@ public:
 	{
 		d_host = "localhost";
 		d_port = 8194;
-		d_security_nameSet();
-		d_conditionCodes = false;
+		d_security_assigned = false;
+		d_startDateTime_assigned = false;
+		d_endDateTime_assigned = false;
 	}
 
 	~IntradayTickExample() {
@@ -327,6 +332,8 @@ public:
 	void run(int argc, char **argv)
 	{
 		if (!parseCommandLine(argc, argv)) return;
+		setConfig();
+
 		SessionOptions sessionOptions;
 		sessionOptions.setServerHost(d_host.c_str());
 		sessionOptions.setServerPort(d_port);
