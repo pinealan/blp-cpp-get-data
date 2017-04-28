@@ -67,6 +67,7 @@ class IntradayTick {
 	bool						d_security_assigned;
 	bool						d_startDateTime_assigned;
 	bool						d_endDateTime_assigned;
+	bool						d_non_interactive;
 
 	std::ofstream				csv_file;
 	std::string					current_processed_date;
@@ -77,6 +78,7 @@ class IntradayTick {
 		std::cout
 			<< "Usage:" << '\n'
 			<< "  Retrieve intraday rawticks " << '\n'
+			<< "    [-n		:non-interactive" << '\n'
 			<< "    [-s     <security = IBM US Equity>" << '\n'
 			<< "    [-e     <event = TRADE/BID/ASK>" << '\n'
 			<< "    [-sd    <startDateTime  = 2008-08-11T15:30:00>" << '\n'
@@ -103,6 +105,9 @@ class IntradayTick {
 			if (!std::strcmp(argv[i], "-s") && i + 1 < argc) {
 				d_security = argv[++i];
 				d_security_assigned = true;
+			}
+			else if (!std::strcmp(argv[i], "-n") && i + 1 < argc) {
+				d_non_interactive = true;
 			}
 			else if (!std::strcmp(argv[i], "-e") && i + 1 < argc) {
 				d_events.push_back(argv[++i]);
@@ -319,6 +324,7 @@ class IntradayTick {
 		csv_file.close();
 	}
 
+	// For interactive 
 	void setConfig()
 	{
 		if (!d_security_assigned) {
@@ -365,6 +371,7 @@ public:
 		d_security_assigned = false;
 		d_startDateTime_assigned = false;
 		d_endDateTime_assigned = false;
+		d_non_interactive = false;
 	}
 
 	~IntradayTick() {
@@ -397,6 +404,10 @@ public:
 
 		session.stop();
 	}
+
+	bool isInteractive() {
+		return d_non_interactive;
+	}
 };
 
 int main(int argc, char **argv)
@@ -409,7 +420,14 @@ int main(int argc, char **argv)
 	catch (Exception &e) {
 		std::cerr << "Library Exception!!! " << e.description() << std::endl << std::endl;
 	}
-	// wait for enter key to exit application
+
+	// Directly exit if flag is set
+	if (scraper.isInteractive()) {
+		std::cout << "Directly exiting..." << std::endl;
+		return 0;
+	}
+
+	// Wait for enter key to exit application
 	std::cout << "Press ENTER to quit" << std::endl;
 	std::string dummy;
 	std::getline(std::cin, dummy);
