@@ -55,7 +55,7 @@ namespace {
 	const Name SESSION_TERMINATED("SessionTerminated");
 };
 
-class IntradayTickExample {
+class IntradayTick {
 
 	std::string                 d_host;
 	int                         d_port;
@@ -63,9 +63,13 @@ class IntradayTickExample {
 	std::vector<std::string>    d_events;
 	std::string                 d_startDateTime;
 	std::string                 d_endDateTime;
+
 	bool						d_security_assigned;
 	bool						d_startDateTime_assigned;
 	bool						d_endDateTime_assigned;
+
+	std::ofstream				csv_file;
+	std::string					current_processed_date;
 
 
 	void printUsage()
@@ -138,14 +142,6 @@ class IntradayTickExample {
 		// Extract data from message
 		Element data = msg.getElement(TICK_DATA).getElement(TICK_DATA);
 		int numItems = data.numValues();
-		std::string fileName;
-		fileName = d_security.replace(d_security.begin(), d_security.end(), ' ', '-');
-		fileName += "_";
-		fileName += d_startDateTime.substr(0, 10);
-		fileName += ".csv";
-
-		std::ofstream csvFile(fileName, std::ios_base::app);
-		csvFile << "TIME,TYPE,VALUE,SIZE" << std::endl;
 
 		// Declare variables in each data row
 		std::string timeString;
@@ -162,8 +158,13 @@ class IntradayTickExample {
 			value = item.getElementAsFloat64(VALUE);
 			size = item.getElementAsInt32(TICK_SIZE);
 
-			csvFile.setf(std::ios::fixed, std::ios::floatfield);
-			csvFile
+			// @TODO Refactor into a file class
+			if (dateChanged(timeString)) {
+				reloadCSV(timeString);
+			}
+
+			csv_file.setf(std::ios::fixed, std::ios::floatfield);
+			csv_file
 				<< timeString << ","
 				<< type << ","
 				<< std::setprecision(3) << std::showpoint << value << ","
@@ -190,7 +191,7 @@ class IntradayTickExample {
 		Service refDataService = session.getService("//blp/refdata");
 		Request request = refDataService.createRequest("IntradayTickRequest");
 
-		// Only one security/eventType per request
+		// Only one security per request
 		request.set("security", d_security.c_str());
 
 		// Add fields to request
@@ -222,6 +223,8 @@ class IntradayTickExample {
 	void eventLoop(Session &session)
 	{
 		bool done = false;
+		loadCSV();
+
 		while (!done) {
 			Event event = session.nextEvent();
 			if (event.eventType() == Event::PARTIAL_RESPONSE) {
@@ -245,6 +248,8 @@ class IntradayTickExample {
 				}
 			}
 		}
+
+		unloadCSV();
 	}
 
 	int getTradingDateRange(Datetime *startDate_p, Datetime *endDate_p)
@@ -283,6 +288,37 @@ class IntradayTickExample {
 		return (-1);
 	}
 
+	// @TODO @BADCODE @CLEANUP
+	// Really bad pattern of littering file management all over the place
+	// Make new class or data structure for this
+	std::string makeFileName(std::string datetime) {
+		std::string file_name;
+		file_name = d_security.replace(d_security.begin(), d_security.end(), ' ', '-');
+		file_name += "_";
+		file_name += datetime.substr(0, 10);
+		file_name += ".csv";
+		return file_name;
+	}
+
+	void loadCSV() {
+		csv_file.open(makeFileName(d_startDateTime), std::ios_base::app);
+	}
+
+	void reloadCSV(std::string item_date) {
+		csv_file.close();
+		current_processed_date = item_date;
+		csv_file.open(makeFileName(current_processed_date), std::ios_base::app);
+	}
+
+	// If the date has changed, return true
+	bool dateChanged(std::string item_date) {
+		return item_date[9] != current_processed_date[9];
+	}
+
+	void unloadCSV() {
+		csv_file.close();
+	}
+
 	void setConfig()
 	{
 		if (!d_security_assigned) {
@@ -315,14 +351,14 @@ class IntradayTickExample {
 	void setEndDateTime()
 	{
 		std::string x;
-		std::cout << "Provide start date: ";
+		std::cout << "Provide end date: ";
 		std::getline(std::cin, x);
 		d_endDateTime = x;
 	}
 
 public:
 
-	IntradayTickExample()
+	IntradayTick()
 	{
 		d_host = "localhost";
 		d_port = 8194;
@@ -331,7 +367,7 @@ public:
 		d_endDateTime_assigned = false;
 	}
 
-	~IntradayTickExample() {
+	~IntradayTick() {
 	}
 
 	void run(int argc, char **argv)
@@ -365,10 +401,10 @@ public:
 
 int main(int argc, char **argv)
 {
-	std::cout << "GGGPA IntraDay Scraper" << std::endl;
-	IntradayTickExample example;
+	std::cout << "GGGPA IntraDay Tick Scraper" << std::endl;
+	IntradayTick scraper;
 	try {
-		example.run(argc, argv);
+		scraper.run(argc, argv);
 	}
 	catch (Exception &e) {
 		std::cerr << "Library Exception!!! " << e.description() << std::endl << std::endl;
